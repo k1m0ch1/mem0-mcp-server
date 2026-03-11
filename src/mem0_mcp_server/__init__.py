@@ -104,14 +104,14 @@ async def handle_call_tool(
 
     async with httpx.AsyncClient(
         auth=(MEM0_USERNAME, MEM0_PASSWORD),
-        timeout=30.0
+        timeout=300.0
     ) as client:
         try:
             if name == "mem0_add_memory":
                 response = await client.post(
                     f"{MEM0_API_URL}/v1/memories",
                     json={
-                        "messages": arguments["content"],
+                        "messages": [{"role": "user", "content": arguments["content"]}],
                         "user_id": arguments["user_id"],
                     },
                 )
@@ -140,7 +140,7 @@ async def handle_call_tool(
                 response.raise_for_status()
                 result = response.json()
 
-                memories = result.get("memories", [])
+                memories = result.get("results", result.get("memories", []))
                 return [
                     TextContent(
                         type="text",
@@ -151,7 +151,7 @@ async def handle_call_tool(
                                 {
                                     "memory": m.get("memory"),
                                     "score": m.get("score"),
-                                    "memory_id": m.get("memory_id"),
+                                    "memory_id": m.get("id", m.get("memory_id")),
                                 }
                                 for m in memories
                             ],
@@ -167,7 +167,7 @@ async def handle_call_tool(
                 response.raise_for_status()
                 result = response.json()
 
-                memories = result.get("memories", [])
+                memories = result.get("results", result.get("memories", []))
                 return [
                     TextContent(
                         type="text",
@@ -198,6 +198,16 @@ async def handle_call_tool(
             else:
                 raise ValueError(f"Unknown tool: {name}")
 
+        except httpx.TimeoutException:
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "success": False,
+                        "error": "Request timed out (LLM inference may take up to 5 minutes)",
+                    }, indent=2),
+                )
+            ]
         except httpx.HTTPError as e:
             error_msg = str(e)
             if hasattr(e, 'response') and e.response is not None:
